@@ -1,0 +1,181 @@
+<html>
+    <head>
+        <title>Image Labeler</title>
+        <link href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' rel='stylesheet'>
+        <style>
+            body {background:#F7F0F0 ;padding: 20px;}
+            h1 {color:#484349;}
+            pre {color: black}
+            img {position: relative; height:600px;margin:20px; cursor:crosshair;}
+            .select-color {
+                padding:5px 10px; 
+                margin:5px; 
+                box-shadow:3px 3px 3px grey; 
+                float:left;
+                background-color:#8AF3FF;
+                width:100px;
+                text-align:center;
+            }
+            .select-color:hover {
+                cursor:pointer;
+            }
+            .pixel-value:hover {
+                cursor:pointer;
+            }
+            .select-color-selected {
+                background-color:#18A999;
+                box-shadow:0px 0px 0px grey; 
+            }
+            .output-color {
+                background-color:white;
+                float:left;
+                padding:10px;
+                width:200px;
+                margin:10px;
+            }
+            .button {
+                display:inline-block;
+                padding:5px 10px;
+                margin:5px;
+                background-color:#484349;
+                box-shadow:3px 3px 3px grey; 
+                color:#F7F0F0; 
+            }
+            .button:hover {
+                cursor:pointer;
+                box-shadow:1px 1px 1px grey; 
+            }
+
+        </style>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    </head>
+    <body>
+        <h1>Image Labeler</h1>
+        <div id='control-buttons'>
+            <div class='button' id='prev'>Previous</div>
+            <div class='button' id='next'>Next</div>
+        </div>
+        <img id='picture' src="{{ url_for('static', filename='T001.png')}}">
+        
+        <div>
+            <div class='button' id='add_color_btn'>Add Color</div> <input type='text' id='add_color'><br>
+        </div>
+        <div id='color-select'>
+
+        </div>
+        <br>
+        <hr>
+        <div id="output"></div>
+
+        <script>
+        var current_img = 1;
+        var current_color = '';
+        var color_lookup = {};
+        
+        // Set up the navigation buttons so that we can switch between pictures
+        $('#next').click(function() {
+            if (current_img < 9 && current_img > 0) {
+                $('#picture').attr('src', '/static/T00'+(current_img+1).toString()+'.png');
+                current_img++;
+            } else if( current_img > 8) {
+                $('#picture').attr('src', '/static/T0'+(current_img+1).toString()+'.png');
+                current_img++;
+            } else {
+                alert('You are at the last image');
+            }
+        });
+        $('#prev').click(function() {
+            if (current_img <= 10 && current_img > 1) {
+                $('#picture').attr('src', '/static/T00'+(current_img-1).toString()+'.png');
+                current_img--;
+            } else  if (current_img > 10){
+                $('#picture').attr('src', '/static/T0'+(current_img-1).toString()+'.png');
+                current_img--;
+            } else {
+                alert('You are at the first image');
+            }
+        });
+
+        // Add a new possible color class
+        $('#add_color_btn').on('click', function() {
+            var new_color = $('#add_color').val();
+            color_lookup[new_color] = [];
+            $('#color-select').append('<div class="select-color" id="'+new_color+'">'+new_color+'</div>');
+            $('#output').append('<div class="output-color" id="'+new_color+'-output"><h3>'+new_color+'</h3></div>');
+        });
+
+        // When a color button is clicked, set the current color to that class and change the button
+        $(document).on('click','.select-color', function() {
+            $('.select-color').attr('class', 'select-color');
+            $(this).addClass("select-color-selected");
+            current_color = $(this).attr('id');
+        });
+        
+        $(document).on('click','.pixel-value', function() {
+            var pixelColor = $(this).attr('class').split(' ')[1];
+            var innerText = $(this).text().slice(1,-1).split(',');
+            var r = innerText[0];
+            var g = innerText[1];
+            var b = innerText[2];
+            for (var i=0; i<color_lookup[pixelColor].length; i++) {
+                var temp = color_lookup[pixelColor][i];
+                if (temp.r == r && temp.g == g && temp.b == b) {
+                    color_lookup[pixelColor].splice(i,1);
+                    break;
+                }
+            }
+            updateDownload();
+            $(this).remove();
+        });
+            
+        var updateDownload = function() {
+            $('#download').remove();
+            var data = 'text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(color_lookup));
+            $('<a id="download" class="button"href="data:'+data+'" download="color.json">Download JSON</a>').appendTo('#control-buttons');
+        }
+
+        // Handle the mouse clicks
+        $(function() {
+            $('img').click(function(e) {
+                this.canvas = $('<canvas />')[0];
+                this.canvas.width = this.width;
+                this.canvas.height = this.height;
+                this.canvas.getContext('2d').drawImage(this, 0, 0, this.width, this.height);
+
+                // Access the data at the clicked point
+                var pixelData = this.canvas.getContext('2d')
+                    .getImageData(event.offsetX, event.offsetY, 1, 1).data;
+
+                // Save that data
+                var color_row = {'r':pixelData[0], 'g':pixelData[1], 'b':pixelData[2]};
+
+                // Test whether or not the pixel value has already been found as part of
+                // this color group
+                var found = false;
+                for (var i=0; i<color_lookup[current_color].length; i++) {
+                    var test_entry = color_lookup[current_color][i];
+                    if (color_row.r == test_entry.r &&
+                            color_row.g == test_entry.g &&
+                            color_row.b == test_entry.b) {
+                        found = true;
+                        break;
+                    }
+                }
+
+                // If it hasn't already been added, then added it to the dict and update the list
+                if (!found) {
+                    var pixelString = '('+pixelData[0] + ',' + pixelData[1] + ',' + pixelData[2]+ ')';
+                    $('#'+current_color+'-output').append('<div class="pixel-value '+current_color+'" style="background-color:rgb'+pixelString+'">'+pixelString+'</div>'); 
+                    color_lookup[current_color].push(color_row);
+                } else {
+                    alert('Color already exists');
+                }
+                updateDownload();
+
+            });
+        });
+
+        </script>
+    </body>
+</html>
+
